@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>Soft Tuner</title>
+    <style>
+#tuner {
+  font-size: 10vw;
+  font-family: monospace;
+}
+    </style>
+  </head>
+  <body>
+    <p>Click the button below to start tuning.</p>
+    <button id="start">start</button>
+    <div id="tuner">--</div>
+    <script>
+const toneFreqs = [27.500, 29.135, 30.868, 32.703, 34.648, 36.708, 38.891, 41.203, 43.654, 46.249, 48.999, 51.913];
+const toneFreqLogs = [];
+for (let i = 0; i < 1000; i++) toneFreqLogs[i] = Math.log(27.5) + Math.log(2)*i/12;
+const toneNames = ["A ", "A#", "B ", "C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#"];
+document.getElementById("start").onclick = async e => {
+  e.target.disabled = true;
+  const ctx = new AudioContext;
+  const analyser = ctx.createAnalyser();
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  analyser.fftSize = 32768;
+  const count = analyser.frequencyBinCount;
+  const dataArr = new Uint8Array(count);
+  const tuner = document.getElementById("tuner");
+
+  setInterval(() => {
+    analyser.getByteFrequencyData(dataArr);
+    let maxIdx = 0, maxDb = -Infinity;
+    for (let i = 0; i < count; i++) {
+      if (maxDb < dataArr[i]) {
+        maxIdx = i;
+        maxDb = dataArr[i];
+      }
+    }
+    const freqStep = ctx.sampleRate/count;
+    const freq = (maxIdx + 0.5) * freqStep;
+    const freqLog = Math.log(freq);
+
+    let l = 0, r = toneFreqLogs.length;
+    while (Math.abs(l - r) > 1) {
+      const i = (l + r) >> 1;
+      const dist = toneFreqLogs[i] - freqLog;
+      if (Math.abs(dist) < Math.log(2)/24) {
+        l = i;
+        break;
+      } else if (dist > 0) {
+        r = i;
+      } else {
+        l = i;
+      }
+    }
+    const nearestToneIdx = l;
+
+    const toneName = toneNames[nearestToneIdx % 12];
+    const coeff = Math.floor(nearestToneIdx / 12);
+    let error = Math.round((freqLog - toneFreqLogs[nearestToneIdx]) * 12 / Math.log(2) * 1e4) * 1e-2;
+    let sign = " ";
+    if (error < 0) sign = "-";
+    else if (error > 0) sign = "+";
+    const cent = Math.abs(error).toFixed(2);
+
+    tuner.textContent = `${toneName}${coeff} ${sign}${cent}`;
+  }, 100);
+};
+    </script>
+  </body>
+</html>
